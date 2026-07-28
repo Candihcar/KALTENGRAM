@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KALTENGRAM 🚘</title>
+    <!-- Библиотека Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; background: #000; color: #fff; display: flex; justify-content: center; }
+        
+        .app-container { width: 100%; max-width: 470px; border-left: 1px solid #262626; border-right: 1px solid #262626; min-height: 100vh; padding-bottom: 70px; position: relative; }
+        .header { height: 50px; border-bottom: 1px solid #262626; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; position: sticky; top: 0; background: #000; z-index: 10; }
+        .logo { font-size: 20px; font-weight: bold; background: linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        
+        /* Карточки и формы */
+        .card { padding: 20px; display: flex; flex-direction: column; gap: 12px; }
+        input, textarea, button { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #363636; background: #121212; color: #fff; font-size: 14px; }
+        button { background: #0095f6; font-weight: 600; cursor: pointer; border: none; margin-top: 5px; }
+        button:hover { background: #1877f2; }
+        
+        /* Профиль */
+        .profile-header { padding: 20px 16px; border-bottom: 1px solid #262626; }
+        .profile-top { display: flex; align-items: center; gap: 20px; margin-bottom: 15px; }
+        .avatar { width: 70px; height: 70px; border-radius: 50%; object-fit: cover; background: #262626; flex-shrink: 0; }
+        .avatar-small { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; background: #262626; }
+        .username { font-size: 18px; font-weight: bold; }
+        .bio { font-size: 14px; color: #dbdbdb; white-space: pre-wrap; margin-top: 5px; }
+        
+        /* Элементы Поста */
+        .post { border-bottom: 1px solid #262626; padding-bottom: 15px; }
+        .post-header { display: flex; align-items: center; padding: 10px 16px; gap: 10px; }
+        .post-img { width: 100%; max-height: 500px; object-fit: cover; background: #121212; }
+        .post-actions { display: flex; gap: 20px; padding: 10px 16px; font-size: 18px; }
+        .action-btn { cursor: pointer; user-select: none; display: flex; align-items: center; gap: 5px; }
+        .post-caption { padding: 0 16px; font-size: 14px; }
+        .post-caption b { margin-right: 6px; }
+
+        /* Нижнее меню */
+        .nav-bar { position: fixed; bottom: 0; width: 100%; max-width: 470px; height: 50px; background: #000; border-top: 1px solid #262626; display: flex; justify-content: space-around; align-items: center; }
+        .nav-btn { cursor: pointer; font-size: 22px; background: none; border: none; width: auto; padding: 0; }
+        
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+<div class="app-container">
+    <div class="header">
+        <div class="logo">KALTENGRAM</div>
+        <div id="user-tag" style="font-size: 12px; color: #8e8e8e;">GV RP</div>
+    </div>
+
+    <!-- 1. ВХОД / РЕГИСТРАЦИЯ -->
+    <div id="auth-view" class="card">
+        <h2 style="text-align: center;">KALTENGRAM 🚘</h2>
+        <p style="font-size: 12px; color: #8e8e8e; text-align: center;">Введи ник из игры и пароль</p>
+        <input type="text" id="auth-username" placeholder="Никнейм (например, Ford_Driver)">
+        <input type="password" id="auth-password" placeholder="Пароль">
+        <button onclick="login()">Войти</button>
+        <button onclick="register()" style="background: #262626;">Зарегистрироваться</button>
+        <p id="auth-error" style="color: #ff4d4d; font-size: 12px; text-align: center;"></p>
+    </div>
+
+    <!-- 2. ЛЕНТА ПОСТОВ -->
+    <div id="feed-view" class="hidden">
+        <div id="posts-list">Загрузка постов...</div>
+    </div>
+
+    <!-- 3. СОЗДАНИЕ ПОСТА -->
+    <div id="create-view" class="card hidden">
+        <h3>Новый пост 📸</h3>
+        <input type="text" id="post-img-url" placeholder="Ссылка на фото авто (URL)">
+        <textarea id="post-caption" placeholder="Описание к фото (например: Оцените новый Форд!)..." rows="3"></textarea>
+        <button onclick="createPost()">Опубликовать</button>
+    </div>
+
+    <!-- 4. ПРОФИЛЬ -->
+    <div id="profile-view" class="hidden">
+        <div class="profile-header">
+            <div class="profile-top">
+                <img id="p-avatar" class="avatar" src="https://via.placeholder.com/70" alt="Аватар">
+                <div>
+                    <div id="p-username" class="username">@username</div>
+                    <button onclick="toggleEditProfile()" style="padding: 5px 10px; font-size: 12px; margin-top: 5px;">Редактировать</button>
+                </div>
+            </div>
+            <div id="p-bio" class="bio">О себе не заполнено...</div>
+        </div>
+
+        <div id="edit-profile-card" class="card hidden">
+            <h4>Настройки профиля</h4>
+            <input type="text" id="edit-avatar-url" placeholder="Ссылка на аватарку (URL)">
+            <textarea id="edit-bio" placeholder="Описание профиля..." rows="2"></textarea>
+            <button onclick="saveProfile()">Сохранить</button>
+        </div>
+    </div>
+
+    <!-- НИЖНЯЯ НАВИГАЦИЯ -->
+    <div class="nav-bar hidden" id="nav-bar">
+        <button class="nav-btn" onclick="showView('feed')">🏠</button>
+        <button class="nav-btn" onclick="showView('create')">➕</button>
+        <button class="nav-btn" onclick="showView('profile')">👤</button>
+        <button class="nav-btn" onclick="logout()" style="font-size: 16px;">🚪</button>
+    </div>
+</div>
+
+<script>
+    // === ВСТАВЬ СВОИ КЛЮЧИ ИЗ SUPABASE НИЖЕ ===
+    const SUPABASE_URL = 'https://bmcagfooguydxssktwtu.supabase.co';
+    const SUPABASE_KEY = 'sb_publishable_Yr0AY7av92fIMtONn5CxGQ_vhUdq5e4';
+    const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    let currentUser = JSON.parse(localStorage.getItem('kaltengram_user')) || null;
+
+    window.onload = () => {
+        if (currentUser) initApp();
+    };
+
+    function initApp() {
+        document.getElementById('auth-view').classList.add('hidden');
+        document.getElementById('nav-bar').classList.remove('hidden');
+        document.getElementById('user-tag').innerText = `@${currentUser.username}`;
+        showView('feed');
+    }
+
+    // РЕГИСТРАЦИЯ И ВХОД
+    async function register() {
+        const username = document.getElementById('auth-username').value.trim();
+        const password = document.getElementById('auth-password').value.trim();
+        const err = document.getElementById('auth-error');
+
+        if (!username || !password) return err.innerText = "Заполните все поля!";
+
+        const { data: existing } = await db.from('users').select('*').eq('username', username).single();
+        if (existing) return err.innerText = "Этот никнейм уже занят!";
+
+        const { data, error } = await db.from('users').insert([
+            { username, password, bio: 'Игрок Greenville RP 🚘', avatar_url: '' }
+        ]).select().single();
+
+        if (error) { err.innerText = "Ошибка регистрации!"; } 
+        else { currentUser = data; saveUser(); initApp(); }
+    }
+
+    async function login() {
+        const username = document.getElementById('auth-username').value.trim();
+        const password = document.getElementById('auth-password').value.trim();
+        const err = document.getElementById('auth-error');
+
+        const { data: user } = await db.from('users').select('*').eq('username', username).eq('password', password).single();
+
+        if (!user) { err.innerText = "Неверный ник или пароль!"; } 
+        else { currentUser = user; saveUser(); initApp(); }
+    }
+
+    function logout() {
+        localStorage.removeItem('kaltengram_user');
+        location.reload();
+    }
+
+    function saveUser() {
+        localStorage.setItem('kaltengram_user', JSON.stringify(currentUser));
+    }
+
+    // ЭКРАНЫ
+    function showView(viewName) {
+        ['feed-view', 'create-view', 'profile-view'].forEach(id => document.getElementById(id).classList.add('hidden'));
+        document.getElementById(`${viewName}-view`).classList.remove('hidden');
+
+        if (viewName === 'feed') loadPosts();
+        if (viewName === 'profile') loadProfileData();
+    }
+
+    // ЛЕНТА ПОСТОВ
+    async function loadPosts() {
+        const container = document.getElementById('posts-list');
+        container.innerHTML = "Загрузка...";
+
+        const { data: posts, error } = await db.from('posts')
+            .select('*, users(username, avatar_url), reactions(type, user_id)')
+            .order('created_at', { ascending: false });
+
+        if (error || !posts.length) {
+            container.innerHTML = "<p style='text-align:center; padding:20px; color:#666;'>Пока нет постов. Будь первым!</p>";
+            return;
+        }
+
+        container.innerHTML = posts.map(p => {
+            const likes = p.reactions.filter(r => r.type === 'like').length;
+            const dislikes = p.reactions.filter(r => r.type === 'dislike').length;
+            const userAvatar = p.users?.avatar_url || 'https://via.placeholder.com/32';
+
+            return `
+                <div class="post">
+                    <div class="post-header">
+                        <img class="avatar-small" src="${userAvatar}">
+                        <b>@${p.users?.username || 'аноним'}</b>
+                    </div>
+                    <img class="post-img" src="${p.image_url}" alt="post">
+                    <div class="post-actions">
+                        <span class="action-btn" onclick="react('${p.id}', 'like')">👍 ${likes}</span>
+                        <span class="action-btn" onclick="react('${p.id}', 'dislike')">👎 ${dislikes}</span>
+                    </div>
+                    <div class="post-caption">
+                        <b>@${p.users?.username}</b> ${p.caption || ''}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    // СОЗДАНИЕ ПОСТА
+    async function createPost() {
+        const image_url = document.getElementById('post-img-url').value.trim();
+        const caption = document.getElementById('post-caption').value.trim();
+
+        if (!image_url) return alert("Вставь ссылку на картинку!");
+
+        const { error } = await db.from('posts').insert([
+            { user_id: currentUser.id, image_url, caption }
+        ]);
+
+        if (!error) {
+            document.getElementById('post-img-url').value = '';
+            document.getElementById('post-caption').value = '';
+            showView('feed');
+        } else {
+            alert("Ошибка публикации!");
+        }
+    }
+
+    // РЕАКЦИИ (ЛАЙКИ / ДИЗЛАЙКИ)
+    async function react(postId, type) {
+        // Удаляем старую реакцию, если есть
+        await db.from('reactions').delete().eq('post_id', postId).eq('user_id', currentUser.id);
+        // Добавляем новую
+        await db.from('reactions').insert([{ post_id: postId, user_id: currentUser.id, type }]);
+        loadPosts();
+    }
+
+    // ПРОФИЛЬ
+    function loadProfileData() {
+        document.getElementById('p-username').innerText = `@${currentUser.username}`;
+        document.getElementById('p-bio').innerText = currentUser.bio || 'Нет описания';
+        if (currentUser.avatar_url) document.getElementById('p-avatar').src = currentUser.avatar_url;
+    }
+
+    function toggleEditProfile() {
+        document.getElementById('edit-profile-card').classList.toggle('hidden');
+        document.getElementById('edit-avatar-url').value = currentUser.avatar_url || '';
+        document.getElementById('edit-bio').value = currentUser.bio || '';
+    }
+
+    async function saveProfile() {
+        const avatar_url = document.getElementById('edit-avatar-url').value.trim();
+        const bio = document.getElementById('edit-bio').value.trim();
+
+        const { data, error } = await db.from('users').update({ avatar_url, bio }).eq('id', currentUser.id).select().single();
+
+        if (!error) {
+            currentUser = data;
+            saveUser();
+            toggleEditProfile();
+            loadProfileData();
+        }
+    }
+</script>
+</body>
+</html>
