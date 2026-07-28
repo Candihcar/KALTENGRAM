@@ -16,7 +16,7 @@
         
         /* Карточки и формы */
         .card { padding: 20px; display: flex; flex-direction: column; gap: 12px; }
-        input, textarea, button { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #363636; background: #121212; color: #fff; font-size: 14px; }
+        input, textarea, button { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #363636; background: #121212; color: #fff; font-size: 14px; box-sizing: border-box; }
         button { background: #0095f6; font-weight: 600; cursor: pointer; border: none; margin-top: 5px; }
         button:hover { background: #1877f2; }
         
@@ -32,10 +32,16 @@
         .post { border-bottom: 1px solid #262626; padding-bottom: 15px; }
         .post-header { display: flex; align-items: center; padding: 10px 16px; gap: 10px; }
         .post-img { width: 100%; max-height: 500px; object-fit: cover; background: #121212; }
-        .post-actions { display: flex; gap: 20px; padding: 10px 16px; font-size: 18px; }
+        .post-actions { display: flex; gap: 20px; padding: 10px 16px; font-size: 16px; color: #a8a8a8; align-items: center; }
         .action-btn { cursor: pointer; user-select: none; display: flex; align-items: center; gap: 5px; }
         .post-caption { padding: 0 16px; font-size: 14px; }
         .post-caption b { margin-right: 6px; }
+
+        /* Сообщения и таблицы */
+        .msg-item { background: #121212; padding: 10px; border-radius: 8px; border: 1px solid #262626; margin-bottom: 8px; font-size: 14px; }
+        .admin-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; }
+        .admin-table th, .admin-table td { border: 1px solid #363636; padding: 8px; text-align: left; }
+        .admin-table th { background: #121212; color: #0095f6; }
 
         /* Нижнее меню */
         .nav-bar { position: fixed; bottom: 0; width: 100%; max-width: 470px; height: 50px; background: #000; border-top: 1px solid #262626; display: flex; justify-content: space-around; align-items: center; }
@@ -76,7 +82,34 @@
         <button onclick="createPost()">Опубликовать</button>
     </div>
 
-    <!-- 4. ПРОФИЛЬ -->
+    <!-- 4. ЛИЧНЫЕ СООБЩЕНИЯ (ЛС) -->
+    <div id="messages-view" class="card hidden">
+        <h3>Личные сообщения 💬</h3>
+        <input type="text" id="msg-receiver" placeholder="Кому (Никнейм)">
+        <textarea id="msg-text" placeholder="Текст сообщения..." rows="2"></textarea>
+        <button onclick="sendMessage()">Отправить</button>
+
+        <h4 style="margin-top: 15px;">Диалоги</h4>
+        <div id="messages-list" style="margin-top: 10px;">Загрузка переписок...</div>
+    </div>
+
+    <!-- 5. АДМИН-ПАНЕЛЬ -->
+    <div id="admin-view" class="card hidden">
+        <h3 style="color: #ff4d4d;">Панель Администратора 👑</h3>
+        
+        <h4>База пользователей (Восстановление)</h4>
+        <table class="admin-table">
+            <thead>
+                <tr><th>Логин</th><th>Пароль</th></tr>
+            </thead>
+            <tbody id="admin-users-list"></tbody>
+        </table>
+
+        <h4 style="margin-top: 15px;">Все сообщения (Модерация)</h4>
+        <div id="admin-messages-list" style="margin-top: 10px;"></div>
+    </div>
+
+    <!-- 6. ПРОФИЛЬ -->
     <div id="profile-view" class="hidden">
         <div class="profile-header">
             <div class="profile-top">
@@ -101,6 +134,8 @@
     <div class="nav-bar hidden" id="nav-bar">
         <button class="nav-btn" onclick="showView('feed')">🏠</button>
         <button class="nav-btn" onclick="showView('create')">➕</button>
+        <button class="nav-btn" onclick="showView('messages')">💬</button>
+        <button class="nav-btn hidden" id="admin-nav-btn" onclick="showView('admin')">👑</button>
         <button class="nav-btn" onclick="showView('profile')">👤</button>
         <button class="nav-btn" onclick="logout()" style="font-size: 16px;">🚪</button>
     </div>
@@ -112,6 +147,7 @@
     const SUPABASE_KEY = 'sb_publishable_Yr0AY7av92fIMtONn5CxGQ_vhUdq5e4';
     const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+    const ADMIN_USERNAME = 'Candihcar';
     let currentUser = JSON.parse(localStorage.getItem('kaltengram_user')) || null;
 
     window.onload = () => {
@@ -122,6 +158,12 @@
         document.getElementById('auth-view').classList.add('hidden');
         document.getElementById('nav-bar').classList.remove('hidden');
         document.getElementById('user-tag').innerText = `@${currentUser.username}`;
+
+        // Если вошел админ Candihcar - показываем иконку короны 👑
+        if (currentUser.username === ADMIN_USERNAME) {
+            document.getElementById('admin-nav-btn').classList.remove('hidden');
+        }
+
         showView('feed');
     }
 
@@ -166,10 +208,12 @@
 
     // ЭКРАНЫ
     function showView(viewName) {
-        ['feed-view', 'create-view', 'profile-view'].forEach(id => document.getElementById(id).classList.add('hidden'));
+        ['feed-view', 'create-view', 'messages-view', 'admin-view', 'profile-view'].forEach(id => document.getElementById(id).classList.add('hidden'));
         document.getElementById(`${viewName}-view`).classList.remove('hidden');
 
         if (viewName === 'feed') loadPosts();
+        if (viewName === 'messages') loadMessages();
+        if (viewName === 'admin') loadAdminData();
         if (viewName === 'profile') loadProfileData();
     }
 
@@ -187,12 +231,18 @@
             return;
         }
 
-        container.innerHTML = posts.map(p => {
-            const likes = p.reactions.filter(r => r.type === 'like').length;
-            const dislikes = p.reactions.filter(r => r.type === 'dislike').length;
+        container.innerHTML = '';
+
+        for (let p of posts) {
+            // Накручиваем +1 просмотр при отрисовке поста
+            const currentViews = (p.views || 0) + 1;
+            await db.from('posts').update({ views: currentViews }).eq('id', p.id);
+
+            const likes = p.reactions ? p.reactions.filter(r => r.type === 'like').length : 0;
+            const dislikes = p.reactions ? p.reactions.filter(r => r.type === 'dislike').length : 0;
             const userAvatar = p.users?.avatar_url || 'https://via.placeholder.com/32';
 
-            return `
+            container.innerHTML += `
                 <div class="post">
                     <div class="post-header">
                         <img class="avatar-small" src="${userAvatar}">
@@ -202,13 +252,14 @@
                     <div class="post-actions">
                         <span class="action-btn" onclick="react('${p.id}', 'like')">👍 ${likes}</span>
                         <span class="action-btn" onclick="react('${p.id}', 'dislike')">👎 ${dislikes}</span>
+                        <span style="margin-left: auto; font-size: 13px;">👁️ ${currentViews}</span>
                     </div>
                     <div class="post-caption">
                         <b>@${p.users?.username}</b> ${p.caption || ''}
                     </div>
                 </div>
             `;
-        }).join('');
+        }
     }
 
     // СОЗДАНИЕ ПОСТА
@@ -219,7 +270,7 @@
         if (!image_url) return alert("Вставь ссылку на картинку!");
 
         const { error } = await db.from('posts').insert([
-            { user_id: currentUser.id, image_url, caption }
+            { user_id: currentUser.id, image_url, caption, views: 0 }
         ]);
 
         if (!error) {
@@ -233,11 +284,79 @@
 
     // РЕАКЦИИ (ЛАЙКИ / ДИЗЛАЙКИ)
     async function react(postId, type) {
-        // Удаляем старую реакцию, если есть
         await db.from('reactions').delete().eq('post_id', postId).eq('user_id', currentUser.id);
-        // Добавляем новую
         await db.from('reactions').insert([{ post_id: postId, user_id: currentUser.id, type }]);
         loadPosts();
+    }
+
+    // ЛИЧНЫЕ СООБЩЕНИЯ
+    async function sendMessage() {
+        const receiver = document.getElementById('msg-receiver').value.trim();
+        const text = document.getElementById('msg-text').value.trim();
+
+        if (!receiver || !text) return alert("Заполните ник получателя и текст!");
+
+        const { error } = await db.from('messages').insert([
+            { sender_username: currentUser.username, receiver_username: receiver, text }
+        ]);
+
+        if (!error) {
+            document.getElementById('msg-text').value = '';
+            loadMessages();
+        } else {
+            alert("Ошибка отправки!");
+        }
+    }
+
+    async function loadMessages() {
+        const container = document.getElementById('messages-list');
+        container.innerHTML = "Загрузка...";
+
+        const { data: msgs } = await db.from('messages')
+            .select('*')
+            .or(`sender_username.eq.${currentUser.username},receiver_username.eq.${currentUser.username}`)
+            .order('created_at', { ascending: false });
+
+        if (!msgs || !msgs.length) {
+            container.innerHTML = "<p style='color:#666;'>Сообщений пока нет</p>";
+            return;
+        }
+
+        container.innerHTML = msgs.map(m => `
+            <div class="msg-item">
+                <div style="color: #0095f6; font-size: 12px; margin-bottom: 3px;">
+                    <b>@${m.sender_username}</b> ➔ <b>@${m.receiver_username}</b>
+                </div>
+                <div>${m.text}</div>
+            </div>
+        `).join('');
+    }
+
+    // АДМИН ПАНЕЛЬ
+    async function loadAdminData() {
+        if (currentUser.username !== ADMIN_USERNAME) return;
+
+        // Загрузка пользователей
+        const { data: users } = await db.from('users').select('*');
+        const usersTable = document.getElementById('admin-users-list');
+        usersTable.innerHTML = users ? users.map(u => `
+            <tr>
+                <td>@${u.username}</td>
+                <td style="color: #ff4d4d;">${u.password}</td>
+            </tr>
+        `).join('') : '';
+
+        // Загрузка всех ЛС
+        const { data: allMsgs } = await db.from('messages').select('*').order('created_at', { ascending: false });
+        const msgsContainer = document.getElementById('admin-messages-list');
+        msgsContainer.innerHTML = allMsgs && allMsgs.length ? allMsgs.map(m => `
+            <div class="msg-item">
+                <div style="color: #ff4d4d; font-size: 12px; margin-bottom: 3px;">
+                    <b>@${m.sender_username}</b> ➔ <b>@${m.receiver_username}</b>
+                </div>
+                <div>${m.text}</div>
+            </div>
+        `).join('') : '<p style="color:#666;">Переписок нет</p>';
     }
 
     // ПРОФИЛЬ
