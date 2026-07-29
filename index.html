@@ -86,7 +86,8 @@
         <h3>Новый пост 📸</h3>
         <input type="text" id="post-img-url" placeholder="Ссылка на фото авто (URL)">
         <textarea id="post-caption" placeholder="Описание к фото..." rows="3"></textarea>
-        <button onclick="createPost()">Опубликовать</button>
+        <button id="pub-btn" onclick="createPost()">Опубликовать</button>
+        <p id="create-error" style="color: #ff4d4d; font-size: 12px;"></p>
     </div>
 
     <!-- 4. ЛИЧНЫЕ СООБЩЕНИЯ (ЛС) -->
@@ -165,7 +166,6 @@
         document.getElementById('nav-bar').classList.remove('hidden');
         document.getElementById('user-tag').innerText = `@${currentUser.username}`;
 
-        // Показываем кнопку админки, если у текущего аккаунта есть флаг is_admin
         if (currentUser.is_admin) {
             document.getElementById('admin-nav-btn').classList.remove('hidden');
         }
@@ -173,11 +173,9 @@
         showView('feed');
     }
 
-    // БЕЗОПАСНАЯ ПРОВЕРКА АДМИН-ДОСТУПА ЧЕРЕЗ БАЗУ ДАННЫХ
     async function checkAdminAccess() {
         if (!currentUser) return alert("Сначала войдите в аккаунт!");
 
-        // Запрашиваем актуальный статус is_admin из Supabase
         const { data: user, error } = await db.from('users')
             .select('is_admin')
             .eq('id', currentUser.id)
@@ -190,11 +188,10 @@
             showView('admin');
             alert("Админ-доступ подтвержден! 👑");
         } else {
-            alert("У вас нет прав администратора! Назначение выполняется через панель Supabase.");
+            alert("У вас нет прав администратора!");
         }
     }
 
-    // РЕГИСТРАЦИЯ И ВХОД
     async function register() {
         const username = document.getElementById('auth-username').value.trim();
         const password = document.getElementById('auth-password').value.trim();
@@ -233,7 +230,6 @@
         localStorage.setItem('kaltengram_user', JSON.stringify(currentUser));
     }
 
-    // ЭКРАНЫ
     function showView(viewName) {
         ['feed-view', 'create-view', 'messages-view', 'admin-view', 'profile-view'].forEach(id => document.getElementById(id).classList.add('hidden'));
         document.getElementById(`${viewName}-view`).classList.remove('hidden');
@@ -253,7 +249,7 @@
             .select('*, users(username, avatar_url), reactions(type, user_id)')
             .order('created_at', { ascending: false });
 
-        if (error || !posts.length) {
+        if (error || !posts || !posts.length) {
             container.innerHTML = "<p style='text-align:center; padding:20px; color:#666;'>Пока нет постов. Будь первым!</p>";
             return;
         }
@@ -261,9 +257,6 @@
         container.innerHTML = '';
 
         for (let p of posts) {
-            const currentViews = (p.views || 0) + 1;
-            await db.from('posts').update({ views: currentViews }).eq('id', p.id);
-
             const likes = p.reactions ? p.reactions.filter(r => r.type === 'like').length : 0;
             const dislikes = p.reactions ? p.reactions.filter(r => r.type === 'dislike').length : 0;
             const userAvatar = p.users?.avatar_url || 'https://via.placeholder.com/32';
@@ -278,44 +271,68 @@
                     <div class="post-actions">
                         <span class="action-btn" onclick="react('${p.id}', 'like')">👍 ${likes}</span>
                         <span class="action-btn" onclick="react('${p.id}', 'dislike')">👎 ${dislikes}</span>
-                        <span style="margin-left: auto; font-size: 13px;">👁️ ${currentViews}</span>
+                        <span style="margin-left: auto; font-size: 13px;">👁️ ${p.views || 0}</span>
                     </div>
                     <div class="post-caption">
-                        <b>@${p.users?.username}</b> ${p.caption || ''}
+                        <b>@${p.users?.username || ''}</b> ${p.caption || ''}
                     </div>
                 </div>
             `;
         }
     }
 
-    // СОЗДАНИЕ ПОСТА
+    // СОЗДАНИЕ ПОСТА (ИСПРАВЛЕННАЯ И БЕЗОПАСНАЯ ФУНКЦИЯ)
     async function createPost() {
         const image_url = document.getElementById('post-img-url').value.trim();
         const caption = document.getElementById('post-caption').value.trim();
+        const errDisplay = document.getElementById('create-error');
+        const pubBtn = document.getElementById('pub-btn');
 
-        if (!image_url) return alert("Вставь ссылку на картинку!");
+        errDisplay.innerText = '';
 
-        const { error } = await db.from('posts').insert([
-            { user_id: currentUser.id, image_url, caption, views: 0 }
-        ]);
+        if (!currentUser) {
+            alert("Вы не вошли в аккаунт!");
+            return;
+        }
 
-        if (!error) {
+        if (!image_url) {
+            errDisplay.innerText = "Вставь ссылку на картинку!";
+            return;
+        }
+
+        pubBtn.innerText = "Публикация...";
+        pubBtn.disabled = true;
+
+        // Явно приводим user_id к числу, если ID числовой
+        const payload = {
+            user_id: Number(currentUser.id),
+            image_url: image_url,
+            caption: caption,
+            views: 0
+        };
+
+        const { data, error } = await db.from('posts').insert([payload]);
+
+        pubBtn.innerText = "Опубликовать";
+        pubBtn.disabled = false;
+
+        if (error) {
+            console.error("Ошибка при публикации поста:", error);
+            errDisplay.innerText = "Ошибка: " + error.message;
+        } else {
             document.getElementById('post-img-url').value = '';
             document.getElementById('post-caption').value = '';
             showView('feed');
-        } else {
-            alert("Ошибка публикации!");
         }
     }
 
-    // РЕАКЦИИ (ЛАЙКИ / ДИЗЛАЙКИ)
     async function react(postId, type) {
+        if (!currentUser) return;
         await db.from('reactions').delete().eq('post_id', postId).eq('user_id', currentUser.id);
         await db.from('reactions').insert([{ post_id: postId, user_id: currentUser.id, type }]);
         loadPosts();
     }
 
-    // ЛИЧНЫЕ СООБЩЕНИЯ
     async function sendMessage() {
         const receiver = document.getElementById('msg-receiver').value.trim();
         const text = document.getElementById('msg-text').value.trim();
@@ -358,11 +375,9 @@
         `).join('');
     }
 
-    // АДМИН ПАНЕЛЬ
     async function loadAdminData() {
         if (!currentUser || !currentUser.is_admin) return;
 
-        // Загрузка пользователей
         const { data: users } = await db.from('users').select('*');
         const usersTable = document.getElementById('admin-users-list');
         usersTable.innerHTML = users ? users.map(u => `
@@ -372,7 +387,6 @@
             </tr>
         `).join('') : '';
 
-        // Загрузка всех ЛС
         const { data: allMsgs } = await db.from('messages').select('*').order('created_at', { ascending: false });
         const msgsContainer = document.getElementById('admin-messages-list');
         msgsContainer.innerHTML = allMsgs && allMsgs.length ? allMsgs.map(m => `
@@ -385,7 +399,6 @@
         `).join('') : '<p style="color:#666;">Переписок нет</p>';
     }
 
-    // ПРОФИЛЬ
     function loadProfileData() {
         document.getElementById('p-username').innerText = `@${currentUser.username}`;
         document.getElementById('p-bio').innerText = currentUser.bio || 'Нет описания';
