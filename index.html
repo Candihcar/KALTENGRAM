@@ -14,7 +14,7 @@
         .header { height: 50px; border-bottom: 1px solid #262626; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; position: sticky; top: 0; background: #000; z-index: 10; }
         .logo { font-size: 20px; font-weight: bold; background: linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
         
-        /* Квадратик входа в админку */
+        /* Квадратик активации админки */
         .admin-btn-square { width: 28px; height: 28px; border: 1px solid #363636; border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 14px; background: #121212; }
         .admin-btn-square:hover { border-color: #0095f6; }
 
@@ -61,19 +61,8 @@
         <div class="logo">KALTENGRAM</div>
         <div style="display: flex; align-items: center; gap: 10px;">
             <div id="user-tag" style="font-size: 12px; color: #8e8e8e;">GV RP</div>
-            <div class="admin-btn-square" onclick="toggleAdminModal()" title="Доступ администратора">🔲</div>
+            <div class="admin-btn-square" onclick="checkAdminAccess()" title="Проверить доступ администратора">🔲</div>
         </div>
-    </div>
-
-    <!-- МОДАЛЬНОЕ ОКНО ВВОДА ПАРОЛЯ АДМИНА -->
-    <div id="admin-modal-view" class="card hidden" style="border-bottom: 1px solid #262626; background: #000;">
-        <h4 style="color: #ff4d4d;">Вход в права Админа 👑</h4>
-        <input type="password" id="admin-pass-input" placeholder="Введите админ-пароль">
-        <div style="display: flex; gap: 8px;">
-            <button onclick="verifyAdminPassword()">Подтвердить</button>
-            <button onclick="toggleAdminModal()" style="background: #262626;">Отмена</button>
-        </div>
-        <p id="admin-modal-error" style="color: #ff4d4d; font-size: 12px;"></p>
     </div>
 
     <!-- 1. ВХОД / РЕГИСТРАЦИЯ -->
@@ -96,7 +85,7 @@
     <div id="create-view" class="card hidden">
         <h3>Новый пост 📸</h3>
         <input type="text" id="post-img-url" placeholder="Ссылка на фото авто (URL)">
-        <textarea id="post-caption" placeholder="Описание к фото (например: Оцените новый Форд!)..." rows="3"></textarea>
+        <textarea id="post-caption" placeholder="Описание к фото..." rows="3"></textarea>
         <button onclick="createPost()">Опубликовать</button>
     </div>
 
@@ -160,14 +149,12 @@
 </div>
 
 <script>
-    // === ВСТАВЬ СВОИ КЛЮЧИ ИЗ SUPABASE НИЖЕ ===
+    // === ВСТАВЬТЕ ВАШИ КЛЮЧИ ИЗ SUPABASE НИЖЕ ===
     const SUPABASE_URL = 'https://bmcagfooguydxssktwtu.supabase.co';
     const SUPABASE_KEY = 'sb_publishable_Yr0AY7av92fIMtONn5CxGQ_vhUdq5e4';
     const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    const ADMIN_PASSWORD_KEY = 'Admin21088';
     let currentUser = JSON.parse(localStorage.getItem('kaltengram_user')) || null;
-    let isAdminUnlocked = localStorage.getItem('kaltengram_is_admin') === 'true';
 
     window.onload = () => {
         if (currentUser) initApp();
@@ -178,35 +165,32 @@
         document.getElementById('nav-bar').classList.remove('hidden');
         document.getElementById('user-tag').innerText = `@${currentUser.username}`;
 
-        // Если админка активирована через пароль
-        if (isAdminUnlocked) {
+        // Показываем кнопку админки, если у текущего аккаунта есть флаг is_admin
+        if (currentUser.is_admin) {
             document.getElementById('admin-nav-btn').classList.remove('hidden');
         }
 
         showView('feed');
     }
 
-    // ЛОГИКА ОКНА ВВОДА ПАРОЛЯ АДМИНА
-    function toggleAdminModal() {
+    // БЕЗОПАСНАЯ ПРОВЕРКА АДМИН-ДОСТУПА ЧЕРЕЗ БАЗУ ДАННЫХ
+    async function checkAdminAccess() {
         if (!currentUser) return alert("Сначала войдите в аккаунт!");
-        document.getElementById('admin-modal-view').classList.toggle('hidden');
-        document.getElementById('admin-modal-error').innerText = '';
-        document.getElementById('admin-pass-input').value = '';
-    }
 
-    function verifyAdminPassword() {
-        const inputPass = document.getElementById('admin-pass-input').value.trim();
-        const err = document.getElementById('admin-modal-error');
+        // Запрашиваем актуальный статус is_admin из Supabase
+        const { data: user, error } = await db.from('users')
+            .select('is_admin')
+            .eq('id', currentUser.id)
+            .single();
 
-        if (inputPass === ADMIN_PASSWORD_KEY) {
-            isAdminUnlocked = true;
-            localStorage.setItem('kaltengram_is_admin', 'true');
+        if (user && user.is_admin) {
+            currentUser.is_admin = true;
+            saveUser();
             document.getElementById('admin-nav-btn').classList.remove('hidden');
-            toggleAdminModal();
             showView('admin');
-            alert("Права администратора успешно выданы вашему аккаунту! 👑");
+            alert("Админ-доступ подтвержден! 👑");
         } else {
-            err.innerText = "Неверный админ-пароль!";
+            alert("У вас нет прав администратора! Назначение выполняется через панель Supabase.");
         }
     }
 
@@ -222,7 +206,7 @@
         if (existing) return err.innerText = "Этот никнейм уже занят!";
 
         const { data, error } = await db.from('users').insert([
-            { username, password, bio: 'Игрок Greenville RP 🚘', avatar_url: '' }
+            { username, password, bio: 'Игрок Greenville RP 🚘', avatar_url: '', is_admin: false }
         ]).select().single();
 
         if (error) { err.innerText = "Ошибка регистрации!"; } 
@@ -242,7 +226,6 @@
 
     function logout() {
         localStorage.removeItem('kaltengram_user');
-        localStorage.removeItem('kaltengram_is_admin');
         location.reload();
     }
 
@@ -278,7 +261,6 @@
         container.innerHTML = '';
 
         for (let p of posts) {
-            // Накручиваем +1 просмотр при отрисовке поста
             const currentViews = (p.views || 0) + 1;
             await db.from('posts').update({ views: currentViews }).eq('id', p.id);
 
@@ -378,7 +360,7 @@
 
     // АДМИН ПАНЕЛЬ
     async function loadAdminData() {
-        if (!isAdminUnlocked) return;
+        if (!currentUser || !currentUser.is_admin) return;
 
         // Загрузка пользователей
         const { data: users } = await db.from('users').select('*');
